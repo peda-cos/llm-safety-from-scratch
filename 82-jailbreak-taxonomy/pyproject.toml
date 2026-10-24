@@ -1,0 +1,27 @@
+[project]
+name = "jailbreak-taxonomy"
+version = "0.1.0"
+description = "Deterministic six-category jailbreak taxonomy and trigram matcher"
+requires-python = ">=3.14"
+dependencies = ["numpy==2.5.5"]
+
+[dependency-groups]
+dev = [
+  "pytest==9.2.0",
+  "mypy==2.4.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["code"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "code"
+files = ["code", "tests"]
+strict = true
+warn_unused_ignores = true

@@ -70,6 +70,28 @@ def test_reordered_categories_raise(tmp_path: Path) -> None:
         load_taxonomy(_write(tmp_path, payload))
 
 
+def test_missing_category_entry_raises(tmp_path: Path) -> None:
+    payload = _payload()
+    categories = payload["categories"]
+    assert isinstance(categories, list)
+    payload["categories"] = [
+        entry
+        for entry in categories
+        if not (isinstance(entry, dict) and entry.get("name") == "role-play")
+    ]
+    with pytest.raises(CorpusError, match="categories must equal"):
+        load_taxonomy(_write(tmp_path, payload))
+
+
+def test_extra_category_entry_raises(tmp_path: Path) -> None:
+    payload = _payload()
+    categories = payload["categories"]
+    assert isinstance(categories, list)
+    payload["categories"] = [*categories, {"name": "extra-category"}]
+    with pytest.raises(CorpusError, match="categories must equal"):
+        load_taxonomy(_write(tmp_path, payload))
+
+
 def test_duplicate_fixture_id_raises(tmp_path: Path) -> None:
     payload = _payload()
     fixtures = _fixtures(payload)

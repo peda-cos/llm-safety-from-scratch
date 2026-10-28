@@ -26,6 +26,14 @@ def _detector(rules: Sequence[dict[str, object]]) -> Detector:
             "not a known category",
         ),
         (
+            {"name": "x", "score": 0.5, "substring": "x"},
+            "category",
+        ),
+        (
+            {"name": "x", "category": "role-play", "substring": "x"},
+            "score",
+        ),
+        (
             {"name": "x", "category": "role-play", "score": 1.5, "substring": "x"},
             "score",
         ),

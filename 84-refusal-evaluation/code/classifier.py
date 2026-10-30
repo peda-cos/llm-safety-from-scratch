@@ -24,7 +24,7 @@ _BRACKET_CONF: Final[re.Pattern[str]] = re.compile(
     rf"\[conf=(?P<value>{_CONFIDENCE_VALUE})\]", re.IGNORECASE
 )
 _COLON_CONF: Final[re.Pattern[str]] = re.compile(
-    rf"\bconfidence:\s*(?P<value>{_CONFIDENCE_VALUE})(?![\d.])",
+    r"\bconfidence:\s*(?P<value>\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
 
@@ -44,6 +44,14 @@ def parse_confidence(response: str) -> float | None:
 
     colon = _COLON_CONF.search(response)
     if colon is not None:
-        return float(colon.group("value"))
+        raw_value = colon.group("value")
+        suffix = response[colon.end() : colon.end() + 1]
+        # Reject a truncated "0." while allowing a sentence-ending "0.9.".
+        if suffix == "." and "." not in raw_value:
+            return None
+        value = float(raw_value)
+        if not 0.0 <= value <= 1.0:
+            return None
+        return value
 
     return None

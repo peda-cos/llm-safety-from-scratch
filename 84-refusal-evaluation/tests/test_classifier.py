@@ -43,6 +43,7 @@ def test_non_first_person_cannot_is_not_refusal(response: str) -> None:
     [
         ("I can't help. [conf=0.9]", 0.9),
         ("No token here. confidence: 0.75", 0.75),
+        ("A confidence sentence: confidence: 0.9.", 0.9),
         ("[conf=1.0]", 1.0),
         ("[conf=0.9] confidence: 0.5", 0.9),
     ],

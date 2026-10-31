@@ -188,3 +188,205 @@ class ToxicityClassifier:
             cursor = end
         parts.append(text[cursor:])
         return "".join(parts)
+
+
+# Shape-only recognizers for the five PII categories in the capstone. Ordered
+# so a credit-card-shaped span wins before the shorter phone alternative.
+_PII_GROUPS: tuple[tuple[str, str], ...] = (
+    (
+        "email",
+        r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+    ),
+    (
+        "card",
+        r"(?<!\w)(?:\d{4}[ -]?){3}\d{4}(?!\w)",
+    ),
+    (
+        "ssn",
+        r"(?<!\w)\d{3}-\d{2}-\d{4}(?!\w)",
+    ),
+    (
+        "ipv4",
+        r"(?<!\w)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w)",
+    ),
+    (
+        "phone",
+        r"(?<!\w)(?:\+?1[ .\-]?)?(?:\(\d{3}\)|\d{3})[ .\-]?\d{3}[ .\-]?\d{4}(?!\w)",
+    ),
+)
+_PII_PATTERN = re.compile(
+    "|".join(f"(?P<{name}>{pattern})" for name, pattern in _PII_GROUPS),
+    re.IGNORECASE,
+)
+_PII_LABELS: dict[str, str] = {
+    "email": "email address",
+    "card": "credit-card-shaped number",
+    "ssn": "SSN-shaped number",
+    "ipv4": "IPv4 address",
+    "phone": "phone number",
+}
+_PII_TAGS: dict[str, str] = {
+    "email": "[redacted-email]",
+    "card": "[redacted-card]",
+    "ssn": "[redacted-ssn]",
+    "ipv4": "[redacted-ip]",
+    "phone": "[redacted-phone]",
+}
+
+
+class PIIClassifier:
+    """Regex-only detection and redaction for common PII shapes."""
+
+    name = "pii"
+
+    def __call__(self, text: str) -> ClassifierVerdict:
+        return self.classify(text)
+
+    @staticmethod
+    def _matches(text: str) -> list[re.Match[str]]:
+        return list(_PII_PATTERN.finditer(text))
+
+    def classify(self, text: str) -> ClassifierVerdict:
+        matches = self._matches(text)
+        if not matches:
+            return ClassifierVerdict(
+                name=self.name, score=0.0, severity=Severity.NONE
+            )
+
+        findings: list[str] = []
+        for match in matches:
+            category = match.lastgroup
+            if category is None:
+                continue
+            findings.append(
+                f"{_PII_LABELS[category]} at offset {match.start()}"
+            )
+        score = round(min(1.0, 0.6 + 0.1 * (len(matches) - 1)), 3)
+        return ClassifierVerdict(
+            name=self.name,
+            score=score,
+            severity=Severity.MEDIUM,
+            findings=findings,
+        )
+
+    def redact(self, text: str) -> str:
+        matches = self._matches(text)
+        if not matches:
+            return text
+
+        parts: list[str] = []
+        cursor = 0
+        for match in matches:
+            category = match.lastgroup
+            if category is None:
+                continue
+            parts.append(text[cursor : match.start()])
+            parts.append(_PII_TAGS[category])
+            cursor = match.end()
+        parts.append(text[cursor:])
+        return "".join(parts)
+
+
+_LEAKAGE_TOKEN_RE = re.compile(r"[a-z0-9']+")
+
+
+def _trigrams(text: str) -> set[tuple[str, str, str]]:
+    tokens = _LEAKAGE_TOKEN_RE.findall(text.lower())
+    return {
+        (tokens[index], tokens[index + 1], tokens[index + 2])
+        for index in range(len(tokens) - 2)
+    }
+
+
+class InstructionLeakageClassifier:
+    """Detect system-prompt echo by output trigram containment."""
+
+    name = "instruction-leakage"
+    REDACTION_TAG = "[redacted-instructions]"
+
+    def __init__(
+        self,
+        system_prompt: str,
+        *,
+        low_threshold: float = 0.20,
+        medium_threshold: float = 0.40,
+        high_threshold: float = 0.75,
+        line_threshold: float = 0.40,
+    ) -> None:
+        if not 0.0 <= low_threshold < medium_threshold < high_threshold <= 1.0:
+            raise ValueError(
+                "leakage thresholds must satisfy 0 <= low < medium < high <= 1"
+            )
+        if not 0.0 <= line_threshold <= 1.0:
+            raise ValueError("line threshold must be in [0, 1]")
+
+        self.system_prompt = system_prompt
+        self.low_threshold = low_threshold
+        self.medium_threshold = medium_threshold
+        self.high_threshold = high_threshold
+        self.line_threshold = line_threshold
+        self._prompt_trigrams = _trigrams(system_prompt)
+
+    def __call__(self, text: str) -> ClassifierVerdict:
+        return self.classify(text)
+
+    def _severity_for(self, score: float) -> Severity:
+        if score >= self.high_threshold:
+            return Severity.HIGH
+        if score >= self.medium_threshold:
+            return Severity.MEDIUM
+        if score >= self.low_threshold:
+            return Severity.LOW
+        return Severity.NONE
+
+    def _line_is_flagged(self, line: str) -> bool:
+        line_trigrams = _trigrams(line)
+        if not line_trigrams:
+            return False
+        shared = len(line_trigrams & self._prompt_trigrams)
+        return shared / len(line_trigrams) >= self.line_threshold
+
+    def classify(self, text: str) -> ClassifierVerdict:
+        output_trigrams = _trigrams(text)
+        if not output_trigrams or not self._prompt_trigrams:
+            return ClassifierVerdict(
+                name=self.name, score=0.0, severity=Severity.NONE
+            )
+
+        shared = len(output_trigrams & self._prompt_trigrams)
+        score = round(shared / len(output_trigrams), 3)
+        severity = self._severity_for(score)
+        if severity is Severity.NONE:
+            return ClassifierVerdict(
+                name=self.name, score=score, severity=Severity.NONE
+            )
+
+        flagged_lines = sum(
+            1 for line in text.splitlines() if self._line_is_flagged(line)
+        )
+        findings = [
+            f"output trigram coverage {score:.2f} "
+            f"({shared}/{len(output_trigrams)})",
+            f"{flagged_lines} line(s) at or above line threshold "
+            f"{self.line_threshold:.2f}",
+        ]
+        return ClassifierVerdict(
+            name=self.name,
+            score=score,
+            severity=severity,
+            findings=findings,
+        )
+
+    def redact(self, text: str) -> str:
+        if not self._prompt_trigrams or not _trigrams(text):
+            return text
+
+        kept = [
+            line
+            for line in text.splitlines(keepends=True)
+            if not self._line_is_flagged(line)
+        ]
+        redacted = "".join(kept)
+        if not redacted.strip():
+            return self.REDACTION_TAG
+        return redacted

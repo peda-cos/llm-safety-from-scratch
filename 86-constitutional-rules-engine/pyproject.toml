@@ -1,0 +1,28 @@
+[project]
+name = "constitutional-rules-engine"
+version = "0.1.0"
+description = "Declarative constitutional rules engine with deterministic repair and audit diff"
+requires-python = ">=3.14"
+dependencies = ["PyYAML==6.0.4"]
+
+[dependency-groups]
+dev = [
+  "pytest==9.2.0",
+  "mypy==2.4.1",
+  "types-PyYAML==6.0.12.20261113",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["code"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "code"
+files = ["code", "tests"]
+strict = true
+warn_unused_ignores = true

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from collections.abc import Sequence
@@ -25,6 +26,21 @@ class RuleStatus(StrEnum):
     PASS = "pass"
     VIOLATION = "violation"
     NOT_APPLICABLE = "not_applicable"
+
+
+class ChangeOp(StrEnum):
+    """Line-diff operation names."""
+
+    ADD = "add"
+    REMOVE = "remove"
+    EDIT = "edit"
+
+
+class Verdict(StrEnum):
+    """The second-pass decision for a revised response."""
+
+    ACCEPTED = "accepted"
+    ESCALATED = "escalated"
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,3 +495,218 @@ class Engine:
                 )
             )
         return results
+
+
+@dataclass(frozen=True, slots=True)
+class FixApplication:
+    """One rule-scoped edit attempted by the fixer."""
+
+    rule: str
+    operation: str
+    changed: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "rule": self.rule,
+            "operation": self.operation,
+            "changed": self.changed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FixResult:
+    """The revised text and the edits that produced it."""
+
+    text: str
+    applications: tuple[FixApplication, ...]
+
+
+class Fixer:
+    """Apply deterministic local edits for violating rules."""
+
+    def __init__(self, rules: Sequence[Rule]) -> None:
+        names = [rule.name for rule in rules]
+        duplicates = sorted(
+            {name for name in names if names.count(name) > 1}
+        )
+        if duplicates:
+            raise ValueError(f"duplicate rule names: {duplicates}")
+        self._names = set(names)
+        self._fixes = {
+            rule.name: rule.fix
+            for rule in rules
+            if rule.fix is not None
+        }
+
+    def apply(
+        self, text: str, violations: Sequence[Violation]
+    ) -> FixResult:
+        applications: list[FixApplication] = []
+        seen: set[str] = set()
+        for violation in violations:
+            if violation.rule not in self._names:
+                raise ValueError(
+                    f"unknown rule in violations: {violation.rule}"
+                )
+            if violation.rule in seen:
+                raise ValueError(
+                    f"duplicate violation for rule: {violation.rule}"
+                )
+            seen.add(violation.rule)
+
+            if violation.status is not RuleStatus.VIOLATION:
+                continue
+            fix = self._fixes.get(violation.rule)
+            if fix is None:
+                continue
+
+            before = text
+            if isinstance(fix, AppendIfMissing):
+                if fix.text not in text:
+                    text += fix.text
+            elif isinstance(fix, PrependIfMissing):
+                if fix.text not in text:
+                    text = fix.text + text
+            else:
+                text = fix.pattern.sub(fix.replacement, text)
+            applications.append(
+                FixApplication(
+                    rule=violation.rule,
+                    operation=fix.kind,
+                    changed=text != before,
+                )
+            )
+        return FixResult(text=text, applications=tuple(applications))
+
+
+@dataclass(frozen=True, slots=True)
+class Change:
+    """One line-level change between the draft and the revised text."""
+
+    op: ChangeOp
+    text: str
+    previous: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "op": self.op.value,
+            "text": self.text,
+            "previous": self.previous,
+        }
+
+
+def diff(before: str, after: str) -> list[Change]:
+    """Return a deterministic line-by-line structured diff."""
+
+    if before == after:
+        return []
+
+    # Line-level diff: a trailing-newline-only edit is intentionally invisible.
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    matcher = difflib.SequenceMatcher(
+        None, before_lines, after_lines, autojunk=False
+    )
+    changes: list[Change] = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if tag == "delete":
+            changes.extend(
+                Change(ChangeOp.REMOVE, line)
+                for line in before_lines[i1:i2]
+            )
+            continue
+        if tag == "insert":
+            changes.extend(
+                Change(ChangeOp.ADD, line)
+                for line in after_lines[j1:j2]
+            )
+            continue
+
+        paired = min(i2 - i1, j2 - j1)
+        changes.extend(
+            Change(
+                ChangeOp.EDIT,
+                after_lines[j1 + offset],
+                before_lines[i1 + offset],
+            )
+            for offset in range(paired)
+        )
+        changes.extend(
+            Change(ChangeOp.REMOVE, line)
+            for line in before_lines[i1 + paired : i2]
+        )
+        changes.extend(
+            Change(ChangeOp.ADD, line)
+            for line in after_lines[j1 + paired : j2]
+        )
+    return changes
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """A draft, its repair, the second-pass evaluation, and the audit diff."""
+
+    draft: str
+    draft_results: tuple[Violation, ...]
+    fix_result: FixResult
+    revised_results: tuple[Violation, ...]
+    changes: tuple[Change, ...]
+    remaining: tuple[Violation, ...]
+    verdict: Verdict
+    requires_block: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "draft": self.draft,
+            "draft_results": [
+                result.to_dict() for result in self.draft_results
+            ],
+            "fixes": [
+                application.to_dict()
+                for application in self.fix_result.applications
+            ],
+            "revised": self.fix_result.text,
+            "revised_results": [
+                result.to_dict() for result in self.revised_results
+            ],
+            "diff": [change.to_dict() for change in self.changes],
+            "verdict": {
+                "status": self.verdict.value,
+                "requires_block": self.requires_block,
+                "remaining": [
+                    violation.rule for violation in self.remaining
+                ],
+            },
+        }
+
+
+def review(engine: Engine, fixer: Fixer, draft: str) -> Review:
+    """Repair a draft once and accept it only if the second pass is clean."""
+
+    draft_results = engine.evaluate(draft)
+    fix_result = fixer.apply(draft, draft_results)
+    revised_results = engine.evaluate(fix_result.text)
+    remaining = tuple(
+        result
+        for result in revised_results
+        if result.status is RuleStatus.VIOLATION
+    )
+    verdict = (
+        Verdict.ACCEPTED if not remaining else Verdict.ESCALATED
+    )
+    requires_block = any(
+        violation.severity is Severity.HIGH for violation in remaining
+    )
+    return Review(
+        draft=draft,
+        draft_results=tuple(draft_results),
+        fix_result=fix_result,
+        revised_results=tuple(revised_results),
+        changes=tuple(diff(draft, fix_result.text)),
+        remaining=remaining,
+        verdict=verdict,
+        requires_block=requires_block,
+    )

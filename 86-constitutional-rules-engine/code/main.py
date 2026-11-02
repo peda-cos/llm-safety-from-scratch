@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import difflib
 import json
 import re
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -710,3 +712,308 @@ def review(engine: Engine, fixer: Fixer, draft: str) -> Review:
         verdict=verdict,
         requires_block=requires_block,
     )
+
+
+DEFAULT_RULES_PATH = Path(__file__).resolve().parent / "rules.yml"
+DEFAULT_REPORT_PATH = (
+    Path(__file__).resolve().parent.parent / "outputs" / "rules_report.json"
+)
+
+CODE_DRAFT = (
+    "Here is the helper.\n\n"
+    "According to the platform guide, the SDK is stable.\n\n"
+    "```python\n"
+    "from example_sdk import run\n\n"
+    'print(run("input.txt"))\n'
+    "```\n\n"
+    "The internal-only adapter handles retries."
+)
+REFUSAL_DRAFT = "I can't help with that request."
+SUPPORT_SENTENCE = (
+    "The support team can help with account access, billing questions, "
+    "and product setup."
+)
+LONG_DRAFT = (
+    "Thanks for reaching out. Contact ana.silva@example.com or call "
+    "(555) 010-0199 for the account review.\n\n"
+    + " ".join([SUPPORT_SENTENCE] * 62)
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Fixture:
+    """A deterministic draft and the outcome the demo must reproduce."""
+
+    id: str
+    description: str
+    draft: str
+    expected_verdict: Verdict
+    expected_remaining: tuple[str, ...] = ()
+
+
+FIXTURES: tuple[Fixture, ...] = (
+    Fixture(
+        "code-answer",
+        "code block, uncited claim, internal name",
+        CODE_DRAFT,
+        Verdict.ACCEPTED,
+    ),
+    Fixture(
+        "empty-refusal",
+        "refusal with no next step",
+        REFUSAL_DRAFT,
+        Verdict.ACCEPTED,
+    ),
+    Fixture(
+        "long-pii-support",
+        "fake email, fake phone, over 800 words",
+        LONG_DRAFT,
+        Verdict.ESCALATED,
+        ("bounded-length",),
+    ),
+)
+
+
+def _status_count(
+    results: Sequence[Violation], status: RuleStatus
+) -> int:
+    return sum(1 for result in results if result.status is status)
+
+
+def _preview(text: str, limit: int = 68) -> str:
+    compact = text.replace("\n", "\\n")
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _print_review(fixture: Fixture, result: Review) -> None:
+    violations = _status_count(
+        result.draft_results, RuleStatus.VIOLATION
+    )
+    not_applicable = _status_count(
+        result.draft_results, RuleStatus.NOT_APPLICABLE
+    )
+    print(
+        f"[{fixture.id}] draft violations: {violations}; "
+        f"not applicable: {not_applicable}"
+    )
+
+    for record in result.draft_results:
+        if record.status is RuleStatus.VIOLATION:
+            span = f" at {list(record.span)}" if record.span else ""
+            print(
+                f"  violation {record.rule} "
+                f"({record.severity.value}){span}: "
+                f"{record.explanation}"
+            )
+        elif record.status is RuleStatus.NOT_APPLICABLE:
+            print(
+                f"  not_applicable {record.rule}: "
+                f"{record.explanation}"
+            )
+
+    for application in result.fix_result.applications:
+        changed = "yes" if application.changed else "no"
+        print(
+            f"  fix {application.operation} "
+            f"({application.rule}) changed={changed}"
+        )
+
+    if result.changes:
+        for change in result.changes:
+            previous = (
+                f" (was {_preview(change.previous)})"
+                if change.previous is not None
+                else ""
+            )
+            print(
+                f"  diff {change.op.value}: "
+                f"{_preview(change.text)}{previous}"
+            )
+    else:
+        print("  diff: none")
+
+    remaining = ", ".join(
+        violation.rule for violation in result.remaining
+    )
+    print(
+        f"  verdict: {result.verdict.value}; "
+        f"remaining: {remaining or 'none'}; "
+        f"requires_block={str(result.requires_block).lower()}"
+    )
+    print()
+
+
+def _build_report(
+    rules: Sequence[Rule],
+    rules_path: Path,
+    reviews: Sequence[Review],
+) -> dict[str, object]:
+    fixture_reports: list[dict[str, object]] = []
+    for fixture, result in zip(FIXTURES, reviews, strict=True):
+        entry: dict[str, object] = {
+            "id": fixture.id,
+            "description": fixture.description,
+        }
+        entry.update(result.to_dict())
+        fixture_reports.append(entry)
+
+    return {
+        "schema_version": 1,
+        "source": "capstone-86-constitutional-rules-engine",
+        "constitution": {
+            "file": rules_path.name,
+            "rule_count": len(rules),
+            "rules": [
+                {
+                    "name": rule.name,
+                    "severity": rule.severity.value,
+                    "explanation": rule.explanation,
+                }
+                for rule in rules
+            ],
+        },
+        "fixtures": fixture_reports,
+        "summary": {
+            "fixture_count": len(FIXTURES),
+            "accepted": sum(
+                1
+                for result in reviews
+                if result.verdict is Verdict.ACCEPTED
+            ),
+            "escalated": sum(
+                1
+                for result in reviews
+                if result.verdict is Verdict.ESCALATED
+            ),
+            "requires_block": sum(
+                1 for result in reviews if result.requires_block
+            ),
+            "draft_violations": sum(
+                _status_count(
+                    result.draft_results, RuleStatus.VIOLATION
+                )
+                for result in reviews
+            ),
+            "revised_violations": sum(
+                _status_count(
+                    result.revised_results, RuleStatus.VIOLATION
+                )
+                for result in reviews
+            ),
+            "not_applicable": sum(
+                _status_count(
+                    result.draft_results, RuleStatus.NOT_APPLICABLE
+                )
+                for result in reviews
+            ),
+        },
+    }
+
+
+def run_demo(
+    *,
+    rules_path: Path = DEFAULT_RULES_PATH,
+    report_path: Path = DEFAULT_REPORT_PATH,
+) -> dict[str, object]:
+    """Run the fixture corpus through the engine and persist the report."""
+
+    rules = load_constitution(rules_path)
+    engine = Engine(rules)
+    fixer = Fixer(rules)
+    reviews = [review(engine, fixer, fixture.draft) for fixture in FIXTURES]
+
+    for fixture, result in zip(FIXTURES, reviews, strict=True):
+        if result.verdict is not fixture.expected_verdict:
+            raise RuntimeError(
+                f"fixture {fixture.id!r}: expected verdict "
+                f"{fixture.expected_verdict.value}, got "
+                f"{result.verdict.value}"
+            )
+        remaining = tuple(
+            violation.rule for violation in result.remaining
+        )
+        if remaining != fixture.expected_remaining:
+            raise RuntimeError(
+                f"fixture {fixture.id!r}: expected remaining "
+                f"{fixture.expected_remaining}, got {remaining}"
+            )
+
+    if {result.verdict for result in reviews} != {
+        Verdict.ACCEPTED,
+        Verdict.ESCALATED,
+    }:
+        raise RuntimeError(
+            "demo must exercise both accepted and escalated verdicts"
+        )
+
+    end_with_na = any(
+        record.rule == "end-with-runnable-or-assumption"
+        and record.status is RuleStatus.NOT_APPLICABLE
+        for result in reviews
+        for record in result.draft_results
+    )
+    if not end_with_na:
+        raise RuntimeError(
+            "demo must show a not_applicable code rule"
+        )
+
+    for fixture, result in zip(FIXTURES, reviews, strict=True):
+        _print_review(fixture, result)
+
+    report = _build_report(rules, rules_path, reviews)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(
+            report, indent=2, sort_keys=True, ensure_ascii=False
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = report["summary"]
+    if not isinstance(summary, dict):
+        raise RuntimeError("report summary missing")
+    print(
+        "Summary: "
+        f"{summary['fixture_count']} fixtures, "
+        f"{summary['accepted']} accepted, "
+        f"{summary['escalated']} escalated, "
+        f"{summary['requires_block']} requires block"
+    )
+    print(f"Wrote {report_path}")
+    return report
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the constitutional rules demo and write the JSON report."
+        )
+    )
+    parser.add_argument(
+        "--rules",
+        type=Path,
+        default=DEFAULT_RULES_PATH,
+        help="path to a .yml, .yaml, or .json constitution",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=DEFAULT_REPORT_PATH,
+        help="path for the deterministic rules report",
+    )
+    args = parser.parse_args(argv)
+    rules_path: Path = args.rules
+    report_path: Path = args.report
+    try:
+        run_demo(rules_path=rules_path, report_path=report_path)
+    except (ConstitutionError, RuntimeError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

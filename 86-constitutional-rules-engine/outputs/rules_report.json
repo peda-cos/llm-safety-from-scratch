@@ -1,0 +1,431 @@
+{
+  "constitution": {
+    "file": "rules.yml",
+    "rule_count": 6,
+    "rules": [
+      {
+        "explanation": "A refusal must offer a concrete next step or a redirect.",
+        "name": "no-empty-refusal",
+        "severity": "medium"
+      },
+      {
+        "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+        "name": "end-with-runnable-or-assumption",
+        "severity": "medium"
+      },
+      {
+        "explanation": "User-facing text must not contain email addresses or phone numbers.",
+        "name": "no-pii-in-examples",
+        "severity": "high"
+      },
+      {
+        "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+        "name": "cite-when-asserting-fact",
+        "severity": "low"
+      },
+      {
+        "explanation": "Internal-only library names must never appear in user-facing output.",
+        "name": "no-internal-library-leak",
+        "severity": "high"
+      },
+      {
+        "explanation": "A response must not exceed 800 words.",
+        "name": "bounded-length",
+        "severity": "low"
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "description": "code block, uncited claim, internal name",
+      "diff": [
+        {
+          "op": "edit",
+          "previous": "According to the platform guide, the SDK is stable.",
+          "text": "According to the platform guide, the SDK is stable. (source: platform documentation)"
+        },
+        {
+          "op": "edit",
+          "previous": "The internal-only adapter handles retries.",
+          "text": "The [redacted-internal-name] adapter handles retries."
+        },
+        {
+          "op": "add",
+          "previous": null,
+          "text": ""
+        },
+        {
+          "op": "add",
+          "previous": null,
+          "text": "Assumption: example inputs are valid."
+        }
+      ],
+      "draft": "Here is the helper.\n\nAccording to the platform guide, the SDK is stable.\n\n```python\nfrom example_sdk import run\n\nprint(run(\"input.txt\"))\n```\n\nThe internal-only adapter handles retries.",
+      "draft_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "violation"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": [
+            21,
+            72
+          ],
+          "status": "violation"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": [
+            146,
+            159
+          ],
+          "status": "violation"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "pass"
+        }
+      ],
+      "fixes": [
+        {
+          "changed": true,
+          "operation": "append_if_missing",
+          "rule": "end-with-runnable-or-assumption"
+        },
+        {
+          "changed": true,
+          "operation": "replace_regex",
+          "rule": "cite-when-asserting-fact"
+        },
+        {
+          "changed": true,
+          "operation": "replace_regex",
+          "rule": "no-internal-library-leak"
+        }
+      ],
+      "id": "code-answer",
+      "revised": "Here is the helper.\n\nAccording to the platform guide, the SDK is stable. (source: platform documentation)\n\n```python\nfrom example_sdk import run\n\nprint(run(\"input.txt\"))\n```\n\nThe [redacted-internal-name] adapter handles retries.\n\nAssumption: example inputs are valid.",
+      "revised_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "pass"
+        }
+      ],
+      "verdict": {
+        "remaining": [],
+        "requires_block": false,
+        "status": "accepted"
+      }
+    },
+    {
+      "description": "refusal with no next step",
+      "diff": [
+        {
+          "op": "add",
+          "previous": null,
+          "text": ""
+        },
+        {
+          "op": "add",
+          "previous": null,
+          "text": "Next step: contact the support team or consult the public documentation."
+        }
+      ],
+      "draft": "I can't help with that request.",
+      "draft_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "violation"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "pass"
+        }
+      ],
+      "fixes": [
+        {
+          "changed": true,
+          "operation": "append_if_missing",
+          "rule": "no-empty-refusal"
+        }
+      ],
+      "id": "empty-refusal",
+      "revised": "I can't help with that request.\n\nNext step: contact the support team or consult the public documentation.",
+      "revised_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "pass"
+        }
+      ],
+      "verdict": {
+        "remaining": [],
+        "requires_block": false,
+        "status": "accepted"
+      }
+    },
+    {
+      "description": "fake email, fake phone, over 800 words",
+      "diff": [
+        {
+          "op": "edit",
+          "previous": "Thanks for reaching out. Contact ana.silva@example.com or call (555) 010-0199 for the account review.",
+          "text": "Thanks for reaching out. Contact [redacted-pii] or call [redacted-pii] for the account review."
+        }
+      ],
+      "draft": "Thanks for reaching out. Contact ana.silva@example.com or call (555) 010-0199 for the account review.\n\nThe support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup.",
+      "draft_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": [
+            33,
+            54
+          ],
+          "status": "violation"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "violation"
+        }
+      ],
+      "fixes": [
+        {
+          "changed": true,
+          "operation": "replace_regex",
+          "rule": "no-pii-in-examples"
+        }
+      ],
+      "id": "long-pii-support",
+      "revised": "Thanks for reaching out. Contact [redacted-pii] or call [redacted-pii] for the account review.\n\nThe support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup. The support team can help with account access, billing questions, and product setup.",
+      "revised_results": [
+        {
+          "explanation": "A refusal must offer a concrete next step or a redirect.",
+          "rule": "no-empty-refusal",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "A response containing a Python code block must end with a closed fence or state an explicit assumption.",
+          "rule": "end-with-runnable-or-assumption",
+          "severity": "medium",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "User-facing text must not contain email addresses or phone numbers.",
+          "rule": "no-pii-in-examples",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "Every line that begins with \"According to\" must carry a parenthetical citation.",
+          "rule": "cite-when-asserting-fact",
+          "severity": "low",
+          "span": null,
+          "status": "not_applicable"
+        },
+        {
+          "explanation": "Internal-only library names must never appear in user-facing output.",
+          "rule": "no-internal-library-leak",
+          "severity": "high",
+          "span": null,
+          "status": "pass"
+        },
+        {
+          "explanation": "A response must not exceed 800 words.",
+          "rule": "bounded-length",
+          "severity": "low",
+          "span": null,
+          "status": "violation"
+        }
+      ],
+      "verdict": {
+        "remaining": [
+          "bounded-length"
+        ],
+        "requires_block": false,
+        "status": "escalated"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "source": "capstone-86-constitutional-rules-engine",
+  "summary": {
+    "accepted": 2,
+    "draft_violations": 6,
+    "escalated": 1,
+    "fixture_count": 3,
+    "not_applicable": 6,
+    "requires_block": 0,
+    "revised_violations": 1
+  }
+}

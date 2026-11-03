@@ -25,14 +25,18 @@ and explanation.
 
 Atomic predicates are single-key mappings:
 
-| Predicate | Argument | Pass condition | Span |
+| Predicate | Argument | Pass condition | Failure span |
 |---|---|---|---|
-| `contains_regex` | non-empty regex string | `pattern.search(text)` finds a match. | Match span. |
-| `not_contains_regex` | non-empty regex string | No match exists. | Forbidden match span on failure. |
-| `ends_with_regex` | non-empty regex string | A match ends at `len(text)` exactly. | Match span. |
-| `starts_with_regex` | non-empty regex string | `pattern.match(text)` succeeds at offset 0. | Match span. |
+| `contains_regex` | non-empty regex string | `pattern.search(text)` finds a match. | `None`. |
+| `not_contains_regex` | non-empty regex string | No match exists. | Forbidden match span. |
+| `ends_with_regex` | non-empty regex string | A match ends at `len(text)` exactly. | `None`. |
+| `starts_with_regex` | non-empty regex string | `pattern.match(text)` succeeds at offset 0. | `None`. |
 | `max_words` | non-negative integer | `len(text.split()) <= limit`. | `None`. |
 | `min_words` | non-negative integer | `len(text.split()) >= limit`. | `None`. |
+
+A violation's `span` is non-null when a failing `not_contains_regex` found a forbidden match, or
+when a composition propagates a child's matched span (for example a failing `not_` over a
+successful `contains_regex`). Raw matched text is never copied into the record.
 
 Compositions are recursive:
 
@@ -205,7 +209,8 @@ phone are redacted on the first fix pass.
 ## Integration rules for the safety gate
 
 1. Buffer the complete candidate output before evaluation; rules see the final text.
-2. Call `review(engine, fixer, draft)` once, then use `review.revised` as the candidate output.
+2. Call `review(engine, fixer, draft)` once, then use `review.fix_result.text` as the candidate
+   output (`Review.to_dict()["revised"]` has the same text for logs).
 3. If `review.requires_block` is true, block or replace the output through the gate's refusal
    path. Do not ship the revised text while an unresolved high rule remains.
 4. If `review.verdict` is `escalated` without `requires_block`, route to human review or a

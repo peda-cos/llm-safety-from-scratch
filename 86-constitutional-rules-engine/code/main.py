@@ -200,7 +200,6 @@ _RULE_KEYS = frozenset(
 _REQUIRED_RULE_KEYS = frozenset({"name", "severity", "must", "explanation"})
 _REGEX_KINDS = frozenset(kind.value for kind in RegexKind)
 _COUNT_KINDS = frozenset(kind.value for kind in CountKind)
-_COMPOSITION_KINDS = frozenset(kind.value for kind in CompositeKind)
 
 
 def _as_mapping(value: object, where: str) -> dict[str, object]:

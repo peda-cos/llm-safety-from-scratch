@@ -1,0 +1,89 @@
+[
+  {
+    "name": "no-pii-in-output",
+    "severity": "medium",
+    "explanation": "User-facing text must not contain email addresses or phone numbers.",
+    "must": {
+      "all_of": [
+        {
+          "not_contains_regex": "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
+        },
+        {
+          "not_contains_regex": "(?<!\\d)(?:\\+?1[ .-]?)?\\(?\\d{3}\\)?[ .-]\\d{3}[ .-]\\d{4}(?!\\d)"
+        }
+      ]
+    },
+    "fix": {
+      "replace_regex": {
+        "pattern": "(?:\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b|(?<!\\d)(?:\\+?1[ .-]?)?\\(?\\d{3}\\)?[ .-]\\d{3}[ .-]\\d{4}(?!\\d))",
+        "replacement": "[redacted-pii]"
+      }
+    }
+  },
+  {
+    "name": "close-python-fence",
+    "severity": "medium",
+    "applies_when": {
+      "contains_regex": "```python"
+    },
+    "must": {
+      "any_of": [
+        {
+          "ends_with_regex": "```\\s*$"
+        },
+        {
+          "contains_regex": "(?i)\\bassumption:"
+        }
+      ]
+    },
+    "explanation": "A response containing a Python code block must close the fence or state an explicit assumption.",
+    "fix": {
+      "append_if_missing": "\n```\n"
+    }
+  },
+  {
+    "name": "cite-uncited-claim",
+    "severity": "low",
+    "applies_when": {
+      "contains_regex": "(?m)^According to"
+    },
+    "must": {
+      "not_contains_regex": "(?m)^According to(?!.*\\([^)\\n]+\\))[^\\n]*$"
+    },
+    "explanation": "Every line that begins with 'According to' must carry a parenthetical citation.",
+    "fix": {
+      "replace_regex": {
+        "pattern": "(?m)^(According to (?!.*\\([^)\\n]+\\))[^\\n]*)$",
+        "replacement": "\\1 (source: platform documentation)"
+      }
+    }
+  },
+  {
+    "name": "no-empty-refusal",
+    "severity": "low",
+    "applies_when": {
+      "contains_regex": "(?i)\\b(?:cannot|can't|can not|unable to|won't help|will not help)\\b"
+    },
+    "must": {
+      "contains_regex": "(?i)\\b(?:next step|you can|contact support|consult|instead)\\b"
+    },
+    "explanation": "A refusal must offer a concrete next step or a redirect.",
+    "fix": {
+      "append_if_missing": "\n\nNext step: contact the support team."
+    }
+  },
+  {
+    "name": "no-internal-tool-leak",
+    "severity": "high",
+    "must": {
+      "not_contains_regex": "(?i)\\b(?:policybot-internal|INTERNAL_EXPORT_KEY)\\b"
+    },
+    "explanation": "Internal-only tool names and export keys must never appear in user-facing output.",
+    "fix": {
+      "replace_regex": {
+        "pattern": "(?i)\\b(?:policybot-internal|INTERNAL_EXPORT_KEY)\\b",
+        "replacement": "[redacted-internal-name]"
+      }
+    }
+  }
+]

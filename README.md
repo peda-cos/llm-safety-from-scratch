@@ -1,4 +1,4 @@
-# Track
+# LLM Safety From Scratch
 
 A collection of 6 tested projects built from scratch, one module per capstone lesson.
 
